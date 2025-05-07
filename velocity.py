@@ -90,12 +90,12 @@ def main():
     st.sidebar.header("Input Options")
     uploaded_files = st.sidebar.file_uploader("Upload DOCX files", type="docx", accept_multiple_files=True)
 
-    # Initialize session state for topics
+    # Initialize session state for topics if not set
     if 'topics_input' not in st.session_state:
         st.session_state.topics_input = ""
 
-    # Populate text area with uploaded file titles
-    if uploaded_files:
+    # Update session state with uploaded file titles
+    if uploaded_files and st.button("Load Titles from Files"):
         titles = extract_titles_from_docx(uploaded_files)
         st.session_state.topics_input = "\n".join(titles)
 
@@ -106,9 +106,6 @@ def main():
         height=300,
         key="topics_input"
     )
-
-    # Update session state with manual edits
-    st.session_state.topics_input = input_text
 
     topics = [line.strip() for line in input_text.split('\n') if line.strip()]
     if not topics:
