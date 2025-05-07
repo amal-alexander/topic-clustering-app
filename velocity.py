@@ -15,7 +15,7 @@ def preprocess_text(text):
 
 def embed_topics(topics):
     """Generate sentence embeddings using SBERT"""
-    model = SentenceTransformer('all-MiniLM-L6-v2')  # Lightweight & fast
+    model = SentenceTransformer('all-MiniLM-L6-v2')
     return model.encode(topics)
 
 def cluster_topics(topics, similarity_threshold=0.75):
@@ -28,7 +28,7 @@ def cluster_topics(topics, similarity_threshold=0.75):
 
     # Clustering with dynamic threshold
     clustering = AgglomerativeClustering(
-        affinity='precomputed',
+        metric='precomputed',
         linkage='average',
         distance_threshold=1 - similarity_threshold,
         n_clusters=None
@@ -53,7 +53,7 @@ def cluster_topics(topics, similarity_threshold=0.75):
         else:
             cluster_indices = [i for i, t in enumerate(topics) if t in cluster_topics]
             sub_matrix = similarity_matrix[np.ix_(cluster_indices, cluster_indices)]
-            avg_sim = np.mean(sub_matrix[np.triu_indices(len(sub_matrix), 1)])
+            avg_sim = np.mean(sub_matrix[np.triu_indices(len(sub_matrix), 1)]) if sub_matrix.size > 1 else 1.0
 
             if avg_sim >= 0.85:
                 cluster_type = 'full_duplicate'

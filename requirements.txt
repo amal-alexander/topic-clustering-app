@@ -1,8 +1,9 @@
-
-streamlit==1.31.1
-sentence-transformers==2.2.2
-scikit-learn==1.4.2
-pandas==2.2.2
-numpy==1.26.4
-torch==2.2.0
-
+ streamlit==1.31.1 > requirements.txt
+ pandas==2.2.2 >> requirements.txt
+ numpy==1.26.4 >> requirements.txt
+ scikit-learn==1.5.1 >> requirements.txt
+ scipy==1.13.1 >> requirements.txt
+ sentence-transformers==2.7.0 >> requirements.txt
+ torch >> requirements.txt
+ transformers >> requirements.txt
+ huggingface-hub >> requirements.txt	
