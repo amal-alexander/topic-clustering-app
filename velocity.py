@@ -20,6 +20,7 @@ def embed_topics(topics):
     return model.encode(topics)
 
 def cluster_topics(topics, similarity_threshold=0.75):
+    """Cluster topics based on semantic similarity"""
     if not topics:
         return []
     processed_topics = [preprocess_text(t) for t in topics]
@@ -87,24 +88,32 @@ def main():
     st.markdown("Group topics using **semantic similarity** for better deduplication and siloing suggestions.")
 
     st.sidebar.header("Input Options")
-    input_method = st.sidebar.radio("Choose input method:", ("Upload DOCX Files", "Enter Topics Manually"))
+    uploaded_files = st.sidebar.file_uploader("Upload DOCX files", type="docx", accept_multiple_files=True)
 
-    topics = []
-    if input_method == "Upload DOCX Files":
-        uploaded_files = st.sidebar.file_uploader("Upload DOCX files", type="docx", accept_multiple_files=True)
-        if uploaded_files:
-            topics = extract_titles_from_docx(uploaded_files)
-            st.text_area("Loaded topics:", value="\n".join(topics), height=300, disabled=True)
-        else:
-            st.warning("Please upload at least one DOCX file.")
-            return
-    else:
-        input_text = st.text_area("Enter one topic per line (e.g., Gold Loan Interest Rates):", height=300)
-        if input_text.strip():
-            topics = [line.strip() for line in input_text.split('\n') if line.strip()]
-        if not topics:
-            st.warning("Please enter at least one topic.")
-            return
+    # Initialize session state for topics
+    if 'topics_input' not in st.session_state:
+        st.session_state.topics_input = ""
+
+    # Populate text area with uploaded file titles
+    if uploaded_files:
+        titles = extract_titles_from_docx(uploaded_files)
+        st.session_state.topics_input = "\n".join(titles)
+
+    # Editable text area for topics
+    input_text = st.text_area(
+        "Enter or edit topics (one per line, e.g., Gold Loan Interest Rates):",
+        value=st.session_state.topics_input,
+        height=300,
+        key="topics_input"
+    )
+
+    # Update session state with manual edits
+    st.session_state.topics_input = input_text
+
+    topics = [line.strip() for line in input_text.split('\n') if line.strip()]
+    if not topics:
+        st.warning("Please enter or upload at least one topic.")
+        return
 
     sim_threshold = st.sidebar.slider("Similarity Threshold", 0.5, 0.95, 0.75, 0.05)
 
