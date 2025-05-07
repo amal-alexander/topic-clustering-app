@@ -1,0 +1,12 @@
+# Ignore everything
+*
+
+# But include these specific files
+!LICENSE
+!README.md
+!requirements.txt
+!velocity.py
+
+*.docx
+*.xlsx
+~$*
