@@ -7,6 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import AgglomerativeClustering
 from collections import defaultdict
 from docx import Document
+import io
 
 def preprocess_text(text):
     """Basic text cleaning"""
@@ -83,6 +84,25 @@ def extract_titles_from_docx(uploaded_files):
             st.error(f"Error reading {file.name}: {e}")
     return titles
 
+def create_excel_file(clusters):
+    """Create an Excel file from clustering results"""
+    data = []
+    for i, cluster in enumerate(clusters, 1):
+        for topic in cluster['topics']:
+            data.append({
+                'Group': f"Group {i}",
+                'Topic': topic,
+                'Type': cluster['type'],
+                'Action': cluster['action'],
+                'Average Similarity': cluster['avg_similarity']
+            })
+    df = pd.DataFrame(data)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Topic Clusters')
+    output.seek(0)
+    return output
+
 def main():
     st.title("🔍 Semantic Topic Clustering with SBERT")
     st.markdown("Group topics using **semantic similarity** for better deduplication and siloing suggestions.")
@@ -136,6 +156,15 @@ def main():
         cols[1].metric("Partial Duplicates", dup_summary['partial_duplicate'])
         cols[2].metric("Related", dup_summary['related'])
         cols[3].metric("Unique", dup_summary['unique'])
+
+        # Generate and offer Excel download
+        excel_file = create_excel_file(clusters)
+        st.download_button(
+            label="📥 Download Results as Excel",
+            data=excel_file,
+            file_name="topic_clusters.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
         st.subheader("📌 Topic Clusters")
         for i, cluster in enumerate(clusters, 1):
