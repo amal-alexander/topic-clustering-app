@@ -1,114 +1,231 @@
-import os
-os.environ["STREAMLIT_WATCHER_IGNORE_MODULES"] = "torch"
 import streamlit as st
 import pandas as pd
-from docx import Document
-from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
+import re
+from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.cluster import KMeans
-import matplotlib.pyplot as plt
-from wordcloud import WordCloud
+from sklearn.cluster import AgglomerativeClustering
+from collections import defaultdict
+from docx import Document
+import io
 
-st.set_page_config(layout="wide")
+def preprocess_text(text):
+    """Basic text cleaning"""
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', '', text)
+    return text.strip()
 
-def extract_titles_from_files(uploaded_files):
-    """Extract titles from DOCX, TXT, CSV, XLSX files"""
+def embed_topics(topics):
+    """Generate sentence embeddings using SBERT"""
+    model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/tmp/huggingface')
+    return model.encode(topics)
+
+def cluster_topics(topics, similarity_threshold=0.75):
+    """Cluster topics based on semantic similarity"""
+    if not topics:
+        return []
+    processed_topics = [preprocess_text(t) for t in topics]
+    embeddings = embed_topics(processed_topics)
+    similarity_matrix = cosine_similarity(embeddings)
+    distance_matrix = 1 - similarity_matrix
+    clustering = AgglomerativeClustering(
+        metric='precomputed',
+        linkage='average',
+        distance_threshold=1 - similarity_threshold,
+        n_clusters=None
+    )
+    labels = clustering.fit_predict(distance_matrix)
+    cluster_map = defaultdict(list)
+    for idx, label in enumerate(labels):
+        cluster_map[label].append(topics[idx])
+    final_clusters = []
+    for cluster_id, cluster_topics in cluster_map.items():
+        if len(cluster_topics) == 1:
+            final_clusters.append({
+                'topics': cluster_topics,
+                'type': 'unique',
+                'action': 'keep',
+                'avg_similarity': 1.0
+            })
+        else:
+            cluster_indices = [i for i, t in enumerate(topics) if t in cluster_topics]
+            sub_matrix = similarity_matrix[np.ix_(cluster_indices, cluster_indices)]
+            avg_sim = np.mean(sub_matrix[np.triu_indices(len(sub_matrix), 1)]) if sub_matrix.size > 1 else 1.0
+            if avg_sim >= 0.85:
+                cluster_type = 'full_duplicate'
+                action = 'merge'
+            elif avg_sim >= 0.7:
+                cluster_type = 'partial_duplicate'
+                action = 'rewrite or merge'
+            else:
+                cluster_type = 'related'
+                action = 'review for siloing'
+            final_clusters.append({
+                'topics': cluster_topics,
+                'type': cluster_type,
+                'action': action,
+                'avg_similarity': avg_sim
+            })
+    return final_clusters
+
+def extract_titles_from_docx(uploaded_files):
+    """Extract headings from uploaded DOCX files"""
     titles = []
     for file in uploaded_files:
         try:
-            filename = file.name.lower()
-
-            if filename.endswith(".docx"):
-                doc = Document(file)
-                for para in doc.paragraphs:
-                    if para.style.name.startswith('Heading') and para.text.strip():
-                        titles.append(para.text.strip())
-                        break
-                else:
-                    titles.append(f"Recommended Link ({file.name})")
-
-            elif filename.endswith(".txt"):
-                lines = file.read().decode("utf-8").splitlines()
-                titles.extend([line.strip() for line in lines if line.strip()])
-
-            elif filename.endswith(".csv"):
-                df = pd.read_csv(file)
-                col = st.sidebar.selectbox(f"Select column from {file.name}", df.columns)
-                titles.extend(df[col].dropna().astype(str).tolist())
-
-            elif filename.endswith(".xlsx"):
-                df = pd.read_excel(file)
-                col = st.sidebar.selectbox(f"Select column from {file.name}", df.columns)
-                titles.extend(df[col].dropna().astype(str).tolist())
-
+            doc = Document(file)
+            for para in doc.paragraphs:
+                if para.style.name.startswith('Heading'):
+                    titles.append(para.text.strip())
+                    break
             else:
-                st.warning(f"Unsupported file type: {file.name}")
+                titles.append(f"Recommended Link ({file.name})")
         except Exception as e:
             st.error(f"Error reading {file.name}: {e}")
     return titles
 
-def cluster_titles(titles, num_clusters):
-    tfidf = TfidfVectorizer(stop_words='english')
-    X = tfidf.fit_transform(titles)
-    model = KMeans(n_clusters=num_clusters, random_state=42)
-    model.fit(X)
-    labels = model.labels_
-    return labels
+def extract_titles_from_txt(uploaded_files):
+    """Extract topics from uploaded TXT files"""
+    titles = []
+    for file in uploaded_files:
+        try:
+            text = file.getvalue().decode("utf-8")
+            titles.extend([line.strip() for line in text.splitlines() if line.strip()])
+        except Exception as e:
+            st.error(f"Error reading {file.name}: {e}")
+    return titles
 
-def display_clusters(titles, labels, num_clusters):
-    clusters = [[] for _ in range(num_clusters)]
-    for title, label in zip(titles, labels):
-        clusters[label].append(title)
+def extract_titles_from_csv(uploaded_files):
+    """Extract topics from uploaded CSV files"""
+    titles = []
+    for file in uploaded_files:
+        try:
+            df = pd.read_csv(file)
+            titles.extend(df.iloc[:, 0].dropna().tolist())  # Assuming first column contains topics
+        except Exception as e:
+            st.error(f"Error reading {file.name}: {e}")
+    return titles
 
-    for i, cluster in enumerate(clusters):
-        st.subheader(f"Cluster {i + 1}")
-        for title in cluster:
-            st.write(f"- {title}")
+def extract_titles_from_xlsx(uploaded_files):
+    """Extract topics from uploaded XLSX files"""
+    titles = []
+    for file in uploaded_files:
+        try:
+            df = pd.read_excel(file)
+            titles.extend(df.iloc[:, 0].dropna().tolist())  # Assuming first column contains topics
+        except Exception as e:
+            st.error(f"Error reading {file.name}: {e}")
+    return titles
 
-def generate_wordcloud(titles):
-    text = " ".join(titles)
-    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
-    st.image(wordcloud.to_array(), use_column_width=True)
+def create_excel_file(clusters):
+    """Create an Excel file from clustering results"""
+    data = []
+    for i, cluster in enumerate(clusters, 1):
+        for topic in cluster['topics']:
+            data.append({
+                'Group': f"Group {i}",
+                'Topic': topic,
+                'Type': cluster['type'],
+                'Action': cluster['action'],
+                'Average Similarity': cluster['avg_similarity']
+            })
+    df = pd.DataFrame(data)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Topic Clusters')
+    output.seek(0)
+    return output
 
 def main():
-    st.title("🔍 Topic Clustering Tool")
+    st.title("🔍 Semantic Topic Clustering with SBERT")
+    
+    st.markdown("""
+    ## How to Use the App:
+    1. **Upload Files**: You can upload `.docx`, `.txt`, `.csv`, or `.xlsx` files containing topics you want to cluster. 
+    2. **Text Area**: Alternatively, manually enter topics one per line.
+    3. **Adjust Similarity Threshold**: Use the slider to adjust the similarity threshold for clustering.
+    4. **View Clusters**: Once you click "Run Analysis", the app will group similar topics, suggest actions like merging or reviewing, and show the average similarity for each group.
+    5. **Download Results**: Download the clustering results as an Excel file.
 
-    st.sidebar.header("📂 Upload Files")
+    This tool uses semantic similarity (via SBERT) to group related topics for better content strategy or deduplication.
+    """)
+
+    st.sidebar.header("Input Options")
     uploaded_files = st.sidebar.file_uploader(
-        "Upload Files (DOCX, TXT, CSV, XLSX)", 
-        type=["docx", "txt", "csv", "xlsx"], 
-        accept_multiple_files=True
+        "Upload files", type=["docx", "txt", "csv", "xlsx"], accept_multiple_files=True)
+
+    # Initialize session state for topics if not set
+    if 'topics_input' not in st.session_state:
+        st.session_state.topics_input = ""
+
+    # Update session state with uploaded file titles
+    if uploaded_files and st.button("Load Titles from Files"):
+        titles = []
+        for file in uploaded_files:
+            if file.name.endswith(".docx"):
+                titles.extend(extract_titles_from_docx([file]))
+            elif file.name.endswith(".txt"):
+                titles.extend(extract_titles_from_txt([file]))
+            elif file.name.endswith(".csv"):
+                titles.extend(extract_titles_from_csv([file]))
+            elif file.name.endswith(".xlsx"):
+                titles.extend(extract_titles_from_xlsx([file]))
+
+        st.session_state.topics_input = "\n".join(titles)
+
+    # Editable text area for topics
+    input_text = st.text_area(
+        "Enter or edit topics (one per line, e.g., Gold Loan Interest Rates):",
+        value=st.session_state.topics_input,
+        height=300,
+        key="topics_input"
     )
 
-    st.sidebar.header("⚙️ Clustering Options")
-    num_clusters = st.sidebar.slider("Select Number of Clusters", 2, 10, 3)
+    topics = [line.strip() for line in input_text.split('\n') if line.strip()]
+    if not topics:
+        st.warning("Please enter or upload at least one topic.")
+        return
 
-    if uploaded_files:
-        titles = extract_titles_from_files(uploaded_files)
-        if not titles:
-            st.warning("No titles found in uploaded files.")
-            return
+    sim_threshold = st.sidebar.slider("Similarity Threshold", 0.5, 0.95, 0.75, 0.05)
 
-        st.header("📄 Extracted Titles")
-        st.write(titles)
+    if st.button("Run Analysis"):
+        with st.spinner("Clustering topics..."):
+            progress = st.progress(0)
+            clusters = cluster_topics(topics, similarity_threshold=sim_threshold)
+            progress.progress(1.0)
 
-        labels = cluster_titles(titles, num_clusters)
-        st.header("📊 Clusters")
-        display_clusters(titles, labels, num_clusters)
+        st.success(f"Done! Found {len(clusters)} groups.")
 
-        st.header("☁️ Word Cloud of Topics")
-        generate_wordcloud(titles)
-    else:
-        st.info("Upload one or more files from the sidebar to begin.")
+        dup_summary = {
+            'full_duplicate': 0,
+            'partial_duplicate': 0,
+            'related': 0,
+            'unique': 0
+        }
+        for cluster in clusters:
+            dup_summary[cluster['type']] += 1
 
-    st.markdown("---")
-    st.subheader("📝 How to Use This Tool:")
-    st.markdown("""
-    1. **Upload one or more files** (`.docx`, `.txt`, `.csv`, or `.xlsx`) via the sidebar.
-    2. **For CSV/XLSX files**, choose the column containing topic titles.
-    3. **Set the number of clusters** you want using the slider.
-    4. View **extracted topics**, **clusters**, and a **word cloud** of the keywords.
-    """)
+        cols = st.columns(4)
+        cols[0].metric("Full Duplicates", dup_summary['full_duplicate'])
+        cols[1].metric("Partial Duplicates", dup_summary['partial_duplicate'])
+        cols[2].metric("Related", dup_summary['related'])
+        cols[3].metric("Unique", dup_summary['unique'])
+
+        # Generate and offer Excel download
+        excel_file = create_excel_file(clusters)
+        st.download_button(
+            label="📥 Download Results as Excel",
+            data=excel_file,
+            file_name="topic_clusters.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        st.subheader("📌 Topic Clusters")
+        for i, cluster in enumerate(clusters, 1):
+            with st.expander(f"Group {i}: {cluster['type'].upper()} ({len(cluster['topics'])} topics) | Avg Sim: {cluster['avg_similarity']:.0%}"):
+                for topic in cluster['topics']:
+                    st.markdown(f"- {topic}")
+                st.markdown(f"**Suggested Action:** `{cluster['action'].upper()}`")
 
 if __name__ == "__main__":
     main()
