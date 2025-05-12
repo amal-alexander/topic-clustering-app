@@ -17,8 +17,13 @@ def preprocess_text(text):
 
 def embed_topics(topics):
     """Generate sentence embeddings using SBERT"""
-    model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/tmp/huggingface')
-    return model.encode(topics)
+    try:
+        model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/tmp/huggingface')
+        embeddings = model.encode(topics, convert_to_numpy=True)
+        return embeddings
+    except Exception as e:
+        st.error(f"Error generating embeddings: {e}")
+        return []
 
 def cluster_topics(topics, similarity_threshold=0.75):
     """Cluster topics based on semantic similarity"""
@@ -26,6 +31,10 @@ def cluster_topics(topics, similarity_threshold=0.75):
         return []
     processed_topics = [preprocess_text(t) for t in topics]
     embeddings = embed_topics(processed_topics)
+    if len(embeddings) == 0:
+        st.error("Failed to generate embeddings. Please check the input.")
+        return []
+
     similarity_matrix = cosine_similarity(embeddings)
     distance_matrix = 1 - similarity_matrix
     clustering = AgglomerativeClustering(
@@ -38,6 +47,7 @@ def cluster_topics(topics, similarity_threshold=0.75):
     cluster_map = defaultdict(list)
     for idx, label in enumerate(labels):
         cluster_map[label].append(topics[idx])
+    
     final_clusters = []
     for cluster_id, cluster_topics in cluster_map.items():
         if len(cluster_topics) == 1:
@@ -139,16 +149,7 @@ def create_excel_file(clusters):
 def main():
     st.title("🔍 Semantic Topic Clustering with SBERT")
     
-    st.markdown("""
-    ## How to Use the App:
-    1. **Upload Files**: You can upload `.docx`, `.txt`, `.csv`, or `.xlsx` files containing topics you want to cluster. 
-    2. **Text Area**: Alternatively, manually enter topics one per line.
-    3. **Adjust Similarity Threshold**: Use the slider to adjust the similarity threshold for clustering.
-    4. **View Clusters**: Once you click "Run Analysis", the app will group similar topics, suggest actions like merging or reviewing, and show the average similarity for each group.
-    5. **Download Results**: Download the clustering results as an Excel file.
-
-    This tool uses semantic similarity (via SBERT) to group related topics for better content strategy or deduplication.
-    """)
+    st.markdown("""## How to Use the App: ...""")  # Add your markdown instructions here.
 
     st.sidebar.header("Input Options")
     uploaded_files = st.sidebar.file_uploader(
