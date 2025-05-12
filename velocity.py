@@ -18,11 +18,14 @@ def preprocess_text(text):
 def embed_topics(topics):
     """Generate sentence embeddings using SBERT"""
     try:
-        model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/tmp/huggingface')
+        model = SentenceTransformer('all-MiniLM-L6-v2', cache_folder='C:/Users/Public/huggingface')
         embeddings = model.encode(topics, convert_to_numpy=True)
+        if embeddings.size == 0:
+            st.error("No embeddings were generated. Please check your input topics.")
+            return []
         return embeddings
     except Exception as e:
-        st.error(f"Error generating embeddings: {e}")
+        st.error(f"Error generating embeddings: {str(e)}")
         return []
 
 def cluster_topics(topics, similarity_threshold=0.75):
@@ -149,7 +152,34 @@ def create_excel_file(clusters):
 def main():
     st.title("🔍 Semantic Topic Clustering with SBERT")
     
-    st.markdown("""## How to Use the App: ...""")  # Add your markdown instructions here.
+    st.markdown("""
+    ## How to Use the App:
+    
+    1. **Input Your Topics:**
+       - Type topics directly in the text area (one topic per line), or
+       - Upload files containing topics (.docx, .txt, .csv, .xlsx)
+    
+    2. **For File Uploads:**
+       - DOCX: First heading from each file will be extracted
+       - TXT: Each line will be treated as a topic
+       - CSV/XLSX: First column will be used as topics
+    
+    3. **Adjust Settings:**
+       - Use the similarity threshold slider in the sidebar (0.5-0.95)
+       - Higher values (e.g., 0.85) group only very similar topics
+       - Lower values (e.g., 0.6) create broader groups
+    
+    4. **Analyze Results:**
+       - Click "Run Analysis" to process your topics
+       - Review the groups and their similarity scores
+       - Download results as Excel for detailed analysis
+    
+    5. **Understanding Groups:**
+       - Full Duplicates (≥85% similar): Nearly identical topics
+       - Partial Duplicates (70-84% similar): Strongly related topics
+       - Related (50-69% similar): Topics sharing common themes
+       - Unique: Topics with no strong similarities
+    """)
 
     st.sidebar.header("Input Options")
     uploaded_files = st.sidebar.file_uploader(
@@ -160,7 +190,7 @@ def main():
         st.session_state.topics_input = ""
 
     # Update session state with uploaded file titles
-    if uploaded_files and st.button("Load Titles from Files"):
+    if uploaded_files and st.sidebar.button("Load Files"):
         titles = []
         for file in uploaded_files:
             if file.name.endswith(".docx"):
@@ -227,6 +257,18 @@ def main():
                 for topic in cluster['topics']:
                     st.markdown(f"- {topic}")
                 st.markdown(f"**Suggested Action:** `{cluster['action'].upper()}`")
+                
+                
+                
+                
+                
+                
+                
 
 if __name__ == "__main__":
     main()
+    
+    
+    
+    
+    
